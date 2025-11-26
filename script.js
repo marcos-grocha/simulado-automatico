@@ -208,3 +208,23 @@ function shuffle(a) {
 function escapeHtml(s) {
   return s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[c]));
 }
+
+// Modal
+const modal = document.getElementById('modal');
+const showBtn = document.getElementById('showInstructionsBtn');
+const closeBtn = document.getElementById('closeModalBtn');
+
+showBtn.addEventListener('click', () => {
+  modal.classList.remove('hidden');
+});
+
+closeBtn.addEventListener('click', () => {
+  modal.classList.add('hidden');
+});
+
+// clicar fora do conteúdo fecha o modal
+modal.addEventListener('click', (e) => {
+  if (e.target === modal) {
+    modal.classList.add('hidden');
+  }
+});

@@ -8,9 +8,14 @@
 </head>
 <body>
   <h2>Simulado (local)</h2>
-  <p class="small">Cole suas questões no formato exigido (veja instruções no app). Em seguida clique em <strong>Importar e salvar</strong>.</p>
+
+  <p class="small">
+    Cole suas questões no formato exigido.  
+    <button id="showInstructionsBtn" class="link-btn">Ver Instruções</button>
+  </p>
 
   <textarea id="input" placeholder="Cole aqui o bloco com 'Pergunta: ...' e 'Gabarito:xxxxx'"></textarea>
+
   <div>
     <button id="importBtn">Importar e salvar</button>
     <button id="startBtn">Iniciar simulado</button>
@@ -22,6 +27,41 @@
   <div id="messages" class="small"></div>
   <div id="list" class="hidden"></div>
   <div id="quiz" class="hidden"></div>
+
+<!-- Modal -->
+<div id="modal" class="modal hidden">
+  <div class="modal-content animated">
+    <h3>Instruções</h3>
+    <pre class="instructions">
+Exemplo de como esperamos que as respostas sejam coladas:
+
+Pergunta: Qual o resultado de 7 + 5?
+a) 10
+b) 11
+c) 12
+d) 13
+e) 14
+
+Pergunta: Quanto é 9 × 6?
+a) 45
+b) 52
+c) 54
+d) 56
+e) 60
+
+Pergunta: Qual a fração equivalente a 0,25?
+a) 1/2
+b) 1/3
+c) 1/4
+d) 1/5
+e) 3/4
+
+Gabarito:ccc
+    </pre>
+    <button id="closeModalBtn">Fechar</button>
+  </div>
+</div>
+
 
   <script src="script.js"></script>
 </body>
