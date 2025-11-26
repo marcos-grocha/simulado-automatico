@@ -1,0 +1,210 @@
+const storageKey = 'simulado_questions_v1';
+
+function showMessage(txt) {
+  document.getElementById('messages').textContent = txt;
+}
+
+function parseBlock(text) {
+  const qRegex = /Pergunta:\s*([\s\S]*?)\s*a\)\s*([\s\S]*?)\s*b\)\s*([\s\S]*?)\s*c\)\s*([\s\S]*?)\s*d\)\s*([\s\S]*?)\s*e\)\s*([\s\S]*?)(?=(?:\nPergunta:|\nGabarito:|$))/gmi;
+  const questions = [];
+  let m;
+
+  while ((m = qRegex.exec(text)) !== null) {
+    const qText = m[1].trim().replace(/\s+/g, ' ');
+    const opts = [m[2].trim(), m[3].trim(), m[4].trim(), m[5].trim(), m[6].trim()]
+      .map(s => s.replace(/^\W+/, '').trim());
+    questions.push({ question: qText, options: opts });
+  }
+
+  const gabMatch = text.match(/Gabarito:\s*([a-eA-E]+)/);
+  if (!gabMatch) throw new Error('Gabarito inválido ou ausente.');
+
+  const gabarito = gabMatch[1].toLowerCase().trim();
+  if (gabarito.length !== questions.length)
+    throw new Error('Quantidade de letras no gabarito não corresponde ao número de perguntas.');
+
+  for (let i = 0; i < questions.length; i++) {
+    const ch = gabarito[i];
+    const idx = { a: 0, b: 1, c: 2, d: 3, e: 4 }[ch];
+    if (idx === undefined) throw new Error('Letra inválida no gabarito.');
+    questions[i].answer = idx;
+  }
+
+  return questions;
+}
+
+function saveQuestions(arr) {
+  const existing = JSON.parse(localStorage.getItem(storageKey) || '[]');
+  const merged = existing.concat(arr);
+  localStorage.setItem(storageKey, JSON.stringify(merged));
+  return merged.length;
+}
+
+document.getElementById('importBtn').addEventListener('click', () => {
+  const txt = document.getElementById('input').value;
+  try {
+    const qs = parseBlock(txt);
+    const total = saveQuestions(qs);
+    showMessage('Importado ' + qs.length + ' questões. Total salvo: ' + total + '.');
+    document.getElementById('input').value = '';
+  } catch (e) {
+    showMessage('Erro: ' + e.message);
+  }
+});
+
+document.getElementById('listBtn').addEventListener('click', () => {
+  const arr = JSON.parse(localStorage.getItem(storageKey) || '[]');
+  const list = document.getElementById('list');
+  if (arr.length === 0) {
+    showMessage('Nenhuma questão salva.');
+    return;
+  }
+  list.innerHTML = '';
+  arr.forEach((q, i) => {
+    const d = document.createElement('div');
+    d.className = 'question-card';
+    d.innerHTML =
+      '<strong>#' + (i + 1) + '</strong> ' + escapeHtml(q.question) + '<br/>' +
+      q.options.map((o, idx) =>
+        '<div class="small">' + String.fromCharCode(97 + idx) + ') ' + escapeHtml(o) + '</div>'
+      ).join('');
+    list.appendChild(d);
+  });
+  list.classList.remove('hidden');
+  document.getElementById('quiz').classList.add('hidden');
+});
+
+document.getElementById('clearBtn').addEventListener('click', () => {
+  if (confirm('Apagar todas as questões salvas?')) {
+    localStorage.removeItem(storageKey);
+    showMessage('Apagado.');
+    document.getElementById('list').innerHTML = '';
+  }
+});
+
+document.getElementById('exportBtn').addEventListener('click', () => {
+  const arr = JSON.parse(localStorage.getItem(storageKey) || '[]');
+  const blob = new Blob([JSON.stringify(arr, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'simulado_questions.json';
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+document.getElementById('startBtn').addEventListener('click', () => {
+  const arr = JSON.parse(localStorage.getItem(storageKey) || '[]');
+  if (arr.length === 0) {
+    showMessage('Não há perguntas salvas.');
+    return;
+  }
+  startQuiz(arr);
+});
+
+function startQuiz(qs) {
+  const questions = shuffle(qs.slice());
+  let index = 0;
+  let correct = 0;
+
+  const quizEl = document.getElementById('quiz');
+  quizEl.innerHTML = '';
+  quizEl.classList.remove('hidden');
+  document.getElementById('list').classList.add('hidden');
+
+  function renderQuestion() {
+    const q = questions[index];
+    quizEl.innerHTML = '';
+    const card = document.createElement('div');
+    card.className = 'question-card';
+
+    const qnum = document.createElement('div');
+    qnum.innerHTML = '<strong>Pergunta ' + (index + 1) + ' de ' + questions.length + '</strong>';
+
+    const qtext = document.createElement('div');
+    qtext.style.margin = '8px 0';
+    qtext.textContent = q.question;
+
+    card.appendChild(qnum);
+    card.appendChild(qtext);
+
+    q.options.forEach((opt, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'option';
+      btn.textContent = String.fromCharCode(97 + i) + ') ' + opt;
+      btn.disabled = false;
+
+      btn.addEventListener('click', () => {
+        if (i === q.answer) {
+          btn.classList.add('correct');
+          correct++;
+        } else {
+          btn.classList.add('wrong');
+        }
+
+        const allBtns = Array.from(card.querySelectorAll('button'));
+        allBtns.forEach((b, ii) => {
+          b.disabled = true;
+          if (ii === q.answer) b.classList.add('correct');
+        });
+
+        const next = document.createElement('div');
+        next.style.marginTop = '10px';
+        const nxtBtn = document.createElement('button');
+        nxtBtn.textContent = (index < questions.length - 1) ? 'Próxima' : 'Finalizar';
+        nxtBtn.addEventListener('click', () => {
+          index++;
+          if (index < questions.length) renderQuestion();
+          else finish();
+        });
+        next.appendChild(nxtBtn);
+        card.appendChild(next);
+      });
+
+      card.appendChild(btn);
+    });
+
+    quizEl.appendChild(card);
+  }
+
+  function finish() {
+    quizEl.innerHTML = '';
+    const res = document.createElement('div');
+    res.className = 'question-card';
+    const pct = Math.round((correct / questions.length) * 100);
+    res.innerHTML = '<h3>Resultado</h3><p>Acertos: ' + correct + ' / ' + questions.length + ' (' + pct + '%)</p>';
+
+    const btns = document.createElement('div');
+    const reviewBtn = document.createElement('button');
+    reviewBtn.textContent = 'Revisar perguntas';
+    reviewBtn.addEventListener('click', () => {
+      index = 0;
+      renderQuestion();
+    });
+
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = 'Fechar';
+    closeBtn.addEventListener('click', () => {
+      quizEl.classList.add('hidden');
+    });
+
+    btns.appendChild(reviewBtn);
+    btns.appendChild(closeBtn);
+    res.appendChild(btns);
+    quizEl.appendChild(res);
+  }
+
+  renderQuestion();
+}
+
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[c]));
+}
