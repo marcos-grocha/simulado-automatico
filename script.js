@@ -228,3 +228,20 @@ modal.addEventListener('click', (e) => {
     modal.classList.add('hidden');
   }
 });
+
+// Modal 2 - Sugestão de Script
+const modalScript = document.getElementById('modalScript');
+const showScriptBtn = document.getElementById('showScriptBtn');
+const closeScriptModalBtn = document.getElementById('closeScriptModalBtn');
+
+showScriptBtn.addEventListener('click', () => {
+  modalScript.classList.remove('hidden');
+});
+
+closeScriptModalBtn.addEventListener('click', () => {
+  modalScript.classList.add('hidden');
+});
+
+modalScript.addEventListener('click', (e) => {
+  if (e.target === modalScript) modalScript.classList.add('hidden');
+});

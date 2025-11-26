@@ -3,15 +3,16 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Simulado - Salvar questões</title>
+  <title>Marcão Simulados</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h2>Simulado (local)</h2>
+  <h2>Simulado Automático</h2>
 
   <p class="small">
     Cole suas questões no formato exigido.  
     <button id="showInstructionsBtn" class="link-btn">Ver Instruções</button>
+    <button id="showScriptBtn" class="link-btn">Sugestão de Script</button>
   </p>
 
   <textarea id="input" placeholder="Cole aqui o bloco com 'Pergunta: ...' e 'Gabarito:xxxxx'"></textarea>
@@ -28,13 +29,12 @@
   <div id="list" class="hidden"></div>
   <div id="quiz" class="hidden"></div>
 
-<!-- Modal -->
-<div id="modal" class="modal hidden">
-  <div class="modal-content animated">
-    <h3>Instruções</h3>
-    <pre class="instructions">
-Exemplo de como esperamos que as respostas sejam coladas:
-
+    <!-- Modal -->
+    <div id="modal" class="modal hidden">
+        <div class="modal-content animated">
+            <h3>Instruções</h3>
+            Exemplo de como esperamos que as respostas sejam coladas:
+            <pre class="instructions">
 Pergunta: Qual o resultado de 7 + 5?
 a) 10
 b) 11
@@ -57,12 +57,49 @@ d) 1/5
 e) 3/4
 
 Gabarito:ccc
-    </pre>
-    <button id="closeModalBtn">Fechar</button>
-  </div>
-</div>
+            </pre>
+            <button id="closeModalBtn">Fechar</button>
+        </div>
+    </div>
 
+    <!-- Modal Sugestão de Script -->
+    <div id="modalScript" class="modal hidden">
+        <div class="modal-content">
+            <h3>Sugestão de Script</h3>
+            Exemplo de script que você pode usar para gerar isso através do ChatGPT, <br>
+            (altere o nome ASSUNTO e os dois X):
+            <pre class="instructions">
+Quero que você gere X perguntas sobre ASSUNTO seguindo EXATAMENTE o padrão abaixo:
 
+Pergunta: TEXTO DA PERGUNTA
+a) alternativa 1
+b) alternativa 2
+c) alternativa 3
+d) alternativa 4
+e) alternativa 5
+
+Após todas as perguntas, escreva apenas:
+
+Gabarito:xxxxx
+
+Onde cada letra corresponde à alternativa correta.
+Exemplo: cebad
+
+IMPORTANTE:
+- Não pule linhas entre perguntas.
+- Use sempre esse formato.
+- Sempre 5 alternativas.
+- Sempre 1 correta.
+
+Agora gere as X perguntas sobre ASSUNTO.
+            </pre>
+            <button id="closeScriptModalBtn">Fechar</button>
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy;<a href="https://www.linkedin.com/in/marcos-grocha/" target="_blank"> marcos-grocha</a></p>
+    </footer>
   <script src="script.js"></script>
 </body>
 </html>

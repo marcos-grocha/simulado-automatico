@@ -103,3 +103,25 @@ button {
   border-radius: 6px;
   white-space: pre-wrap;
 }
+
+footer {
+    text-align: center;
+    font-style: italic;
+    background-color: rgba(0, 0, 0, 0.05);
+    width: auto;
+    max-width: 200px;
+    margin: var(--spacing-md) auto;
+    border-radius: var(--border-radius-lg);
+    padding: var(--spacing-sm);
+}
+
+footer a {
+    color: var(--text-light);
+    text-decoration: none;
+    transition: color 0.3s ease;
+}
+
+footer a:hover {
+    color: var(--primary-color);
+    text-decoration: underline;
+}
