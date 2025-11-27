@@ -1,19 +1,25 @@
-// script.js - Marcão Simulados (com suporte a Justificativa)
-// Versão atualizada
-
 const storageKey = 'simulado_questions_v1';
 
-/* ---------- Helpers de UI ---------- */
+/* ============================================================
+   Helpers
+   ============================================================ */
 
 function showMessage(txt, type = '') {
   const el = document.getElementById('messages');
   el.textContent = txt;
-  el.className = 'small ' + (type ? 'msg-' + type : '');
+
+  const color =
+    type === 'success' ? 'text-green-600' :
+    type === 'error'   ? 'text-red-600' :
+    'text-gray-500 dark:text-gray-400';
+
+  el.className = `text-sm mb-4 ${color}`;
+
   if (type === 'success') {
     setTimeout(() => {
       if (el.textContent === txt) {
         el.textContent = '';
-        el.className = 'small';
+        el.className = 'text-sm text-gray-500 dark:text-gray-400';
       }
     }, 4000);
   }
@@ -22,7 +28,14 @@ function showMessage(txt, type = '') {
 function escapeHtml(s) {
   if (typeof s !== 'string') return s;
   return s.replace(/[&<>"'\/]/g, c =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;", "/": "&#x2F;" }[c] || c)
+    ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      "\"": "&quot;",
+      "'": "&#39;",
+      "/": "&#x2F;"
+    }[c] || c)
   );
 }
 
@@ -31,7 +44,6 @@ function createEl(tag, props = {}, children = []) {
   for (const k in props) {
     if (k === 'class') el.className = props[k];
     else if (k === 'text') el.textContent = props[k];
-    else if (k.startsWith('data-')) el.setAttribute(k, props[k]);
     else el[k] = props[k];
   }
   children.forEach(c => {
@@ -41,429 +53,496 @@ function createEl(tag, props = {}, children = []) {
   return el;
 }
 
-/* ---------- Mini-API Simulado ---------- */
+/* ============================================================
+   Storage API
+   ============================================================ */
 
 const Simulado = {
   _load() {
     try {
       return JSON.parse(localStorage.getItem(storageKey) || '[]');
-    } catch (e) {
-      console.error('Erro ao ler storage', e);
+    } catch {
       return [];
     }
   },
-  list() {
-    return this._load();
-  },
-  add(questionObj) {
-    const existing = this._load();
-    // id by hash including justification to avoid equal questions with different explanation
-    const id = btoa((questionObj.question || '') + '|' + (questionObj.options || []).join('|') + '|' + (questionObj.explanation || ''));
-    if (existing.some(q => q.id === id)) {
-      return { added: false, reason: 'duplicate' };
-    }
-    const item = Object.assign({ id }, questionObj);
-    existing.push(item);
-    localStorage.setItem(storageKey, JSON.stringify(existing));
-    return { added: true, item, total: existing.length };
+  list() { return this._load(); },
+  add(qObj) {
+    const arr = this._load();
+    const id = btoa(
+      (qObj.question || '') +
+      '|' + (qObj.options || []).join('|') +
+      '|' + (qObj.explanation || '')
+    );
+
+    if (arr.some(q => q.id === id)) return { added: false, reason: 'duplicate' };
+
+    arr.push({ id, ...qObj });
+    localStorage.setItem(storageKey, JSON.stringify(arr));
+    return { added: true };
   },
   remove(id) {
-    const existing = this._load();
-    const filtered = existing.filter(q => q.id !== id);
-    localStorage.setItem(storageKey, JSON.stringify(filtered));
-    return filtered.length;
+    const arr = this._load().filter(q => q.id !== id);
+    localStorage.setItem(storageKey, JSON.stringify(arr));
   },
   update(id, newObj) {
-    const existing = this._load();
-    const idx = existing.findIndex(q => q.id === id);
-    if (idx === -1) return false;
-    // recompute id (include explanation)
-    const newId = btoa((newObj.question || '') + '|' + (newObj.options || []).join('|') + '|' + (newObj.explanation || ''));
-    existing[idx] = Object.assign({}, newObj, { id: newId });
-    localStorage.setItem(storageKey, JSON.stringify(existing));
+    const arr = this._load();
+    const i = arr.findIndex(q => q.id === id);
+    if (i === -1) return false;
+
+    const newId = btoa(
+      (newObj.question || '') +
+      '|' + (newObj.options || []).join('|') +
+      '|' + (newObj.explanation || '')
+    );
+
+    arr[i] = { id: newId, ...newObj };
+    localStorage.setItem(storageKey, JSON.stringify(arr));
     return true;
   },
-  clear() {
-    localStorage.removeItem(storageKey);
-  },
-  export() {
-    return this._load();
-  }
+  clear() { localStorage.removeItem(storageKey); },
+  export() { return this._load(); }
 };
 
-/* ---------- Parser (com justificativa opcional) ---------- */
+/* ============================================================
+   Parser (com justificativa opcional)
+   ============================================================ */
 
 function parseBlock(text) {
   if (!text || !text.trim()) throw new Error('Texto vazio.');
 
-  // Normalize
   text = text.replace(/\r\n/g, '\n').trim();
 
-  // Extract gabarito (may contain spaces/newlines between letters)
   const gabMatch = text.match(/Gabarito:\s*([a-eA-E\s]+)/i);
   if (!gabMatch) throw new Error('Gabarito inválido ou ausente.');
-  const gabaritoRaw = gabMatch[1].replace(/\s+/g, '').toLowerCase();
-  const gabaritoLetters = gabaritoRaw.split('');
 
-  // Remove the Gabarito block to simplify question parsing
-  const withoutGabarito = text.replace(/Gabarito:\s*[a-eA-E\s]+/i, '').trim();
+  const gabarito = gabMatch[1].replace(/\s+/g, '').toLowerCase().split('');
 
-  // Split by "Pergunta:" occurrences (keep each block starting with Pergunta:)
-  const parts = withoutGabarito.split(/(?=Pergunta:)/i).map(p => p.trim()).filter(Boolean);
+  const noGab = text.replace(/Gabarito:\s*[a-eA-E\s]+/i, '').trim();
+
+  const parts = noGab
+    .split(/(?=Pergunta:)/i)
+    .map(p => p.trim())
+    .filter(Boolean);
 
   const questions = [];
 
   for (const p of parts) {
-    if (!/^Pergunta:/i.test(p)) continue;
     const rest = p.replace(/^Pergunta:\s*/i, '').trim();
 
-    // Question text is everything up to the first 'a)' occurrence
-    let qText = '';
     const aIdx = rest.search(/\n\s*a\)\s/i);
-    if (aIdx !== -1) {
-      qText = rest.substring(0, aIdx).trim();
-    } else {
-      // fallback: try inline ' a)'
-      const m = rest.match(/a\)\s*/i);
-      if (m && m.index > 0) qText = rest.substring(0, m.index).trim();
-      else throw new Error('Formato inválido: alternativa "a)" não encontrada.');
-    }
+    if (aIdx === -1) throw new Error('Alternativa a) não encontrada.');
 
-    // Now capture options a) ... e) (each may be multiline)
-    // We'll use lookaheads anchored at line starts with case-insensitive flags
-    const aRe = /a\)\s*([\s\S]*?)(?=^\s*b\)\s)/im;
-    const bRe = /b\)\s*([\s\S]*?)(?=^\s*c\)\s)/im;
-    const cRe = /c\)\s*([\s\S]*?)(?=^\s*d\)\s)/im;
-    const dRe = /d\)\s*([\s\S]*?)(?=^\s*e\)\s)/im;
-    const eRe = /e\)\s*([\s\S]*?)(?=(^\s*Justificativa:|\nPergunta:|$))/im;
+    const qText = rest.substring(0, aIdx).trim();
 
-    const aM = rest.match(aRe);
-    const bM = rest.match(bRe);
-    const cM = rest.match(cRe);
-    const dM = rest.match(dRe);
-    const eM = rest.match(eRe);
+    const re = label =>
+      new RegExp(`${label}\\)\\s*([\\s\\S]*?)(?=^\\s*[a-e]\\)|^\\s*Justificativa:|$)`, 'im');
 
-    if (!aM || !bM || !cM || !dM || !eM) {
-      throw new Error('Cada pergunta deve ter 5 alternativas (a) a e)). Problema na pergunta: ' + qText.slice(0, 40));
-    }
-
-    const opts = [aM[1], bM[1], cM[1], dM[1], eM[1]].map(s =>
-      s.replace(/^\s*[-–—]?\s*/, '') // remove leading dash
-       .replace(/\s+$/,'')
-       .replace(/\s+/g, ' ')
-       .trim()
-    );
-
-    // Try to find Justificativa inside this block (after e) ), optional and may be multiline
-    let explanation = '';
-    const justRe = /Justificativa:\s*([\s\S]*?)$/im;
-    const justM = rest.match(justRe);
-    if (justM) {
-      explanation = justM[1].trim().replace(/\s+/g, ' ');
-    } else {
-      explanation = '';
-    }
-
-    questions.push({
-      question: qText.replace(/\s+/g, ' ').trim(),
-      options: opts,
-      answer: null, // will set after mapping gabarito
-      explanation
+    const options = ['a','b','c','d','e'].map(l => {
+      const m = rest.match(re(l));
+      if (!m) throw new Error(`Alternativa ${l}) faltando.`);
+      return m[1].replace(/\s+/g, ' ').trim();
     });
+
+    const justM = rest.match(/Justificativa:\s*([\s\S]*)$/i);
+    const explanation = justM ? justM[1].replace(/\s+/g,' ').trim() : '';
+
+    questions.push({ question: qText, options, answer: null, explanation });
   }
 
-  if (gabaritoLetters.length !== questions.length) {
-    throw new Error('Quantidade de letras no gabarito não corresponde ao número de perguntas. Achadas ' + questions.length + ' perguntas e ' + gabaritoLetters.length + ' letras.');
-  }
+  if (questions.length !== gabarito.length)
+    throw new Error('Quantidade de perguntas ≠ quantidade de letras no gabarito.');
 
-  for (let i = 0; i < questions.length; i++) {
-    const ch = gabaritoLetters[i];
-    const idx = { a: 0, b: 1, c: 2, d: 3, e: 4 }[ch];
-    if (idx === undefined) throw new Error('Letra inválida no gabarito: ' + ch);
-    questions[i].answer = idx;
-  }
+  questions.forEach((q, i) => {
+    const idx = { a:0,b:1,c:2,d:3,e:4 }[gabarito[i]];
+    if (idx === undefined) throw new Error('Letra inválida no gabarito.');
+    q.answer = idx;
+  });
 
   return questions;
 }
 
-/* ---------- Render list view (sem innerHTML) ---------- */
+/* ============================================================
+   LISTA DE QUESTÕES
+   ============================================================ */
 
 function renderListView() {
   const arr = Simulado.list();
   const list = document.getElementById('list');
   list.innerHTML = '';
+
   if (arr.length === 0) {
     showMessage('Nenhuma questão salva.', 'info');
     list.classList.add('hidden');
     return;
   }
 
-  arr.forEach((q, i) => {
-    const card = createEl('div', { class: 'question-card' });
-    const header = createEl('div', { class: 'card-header' }, [
-      createEl('strong', { text: '#' + (i + 1) + ' ' }),
-      createEl('span', { text: q.question })
-    ]);
-    card.appendChild(header);
-
-    const optsDiv = createEl('div', { class: 'options-list' });
-    q.options.forEach((o, idx) => {
-      const row = createEl('div', { class: 'small opt-row' });
-      const letter = createEl('span', { class: 'opt-letter', text: String.fromCharCode(97 + idx) + ') ' });
-      const txt = createEl('span', { text: o });
-      if (idx === q.answer) letter.classList.add('correct-letter');
-      row.appendChild(letter);
-      row.appendChild(txt);
-      optsDiv.appendChild(row);
+  arr.forEach((q, idx) => {
+    const card = createEl("div", {
+      class:
+        "bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 " +
+        "rounded-lg p-4 shadow mb-4"
     });
-    card.appendChild(optsDiv);
 
-    // Justificativa (if exists)
-    const justDiv = createEl('div', { class: 'small justify' });
-    justDiv.textContent = q.explanation ? ('Justificativa: ' + q.explanation) : 'Justificativa: (vazia)';
-    card.appendChild(justDiv);
+    card.appendChild(createEl("div", {
+      class: "font-semibold mb-2",
+      text: `#${idx + 1} — ${q.question}`
+    }));
 
-    const actions = createEl('div', { class: 'card-actions' });
-    const editBtn = createEl('button', { text: '✏️ Editar' });
-    const delBtn = createEl('button', { text: '❌ Excluir' });
+    q.options.forEach((opt, i) => {
+      const row = createEl("div", {
+        class: "flex items-start gap-2 text-sm my-1"
+      });
 
-    editBtn.addEventListener('click', () => openEditDialog(q));
-    delBtn.addEventListener('click', () => {
-      openConfirm('Excluir esta questão?', () => {
+      const letter = createEl("span", {
+        class: "font-bold text-gray-500 w-5",
+        text: `${String.fromCharCode(97 + i)})`
+      });
+
+      if (i === q.answer) letter.classList.add("text-green-600");
+
+      row.appendChild(letter);
+      row.appendChild(createEl("span", { text: opt }));
+      card.appendChild(row);
+    });
+
+    const just = createEl("div", {
+      class: "text-xs text-gray-500 dark:text-gray-400 mt-2",
+      text: `Justificativa: ${q.explanation || "(vazia)"}`
+    });
+    card.appendChild(just);
+
+    const btns = createEl("div", { class: "flex gap-2 mt-3" });
+
+    const editBtn = createEl("button", {
+      text: "Editar",
+      class:
+        "px-3 py-1 rounded bg-yellow-500 text-white hover:bg-yellow-600 transition text-sm"
+    });
+
+    const delBtn = createEl("button", {
+      text: "Excluir",
+      class:
+        "px-3 py-1 rounded bg-red-500 text-white hover:bg-red-600 transition text-sm"
+    });
+
+    editBtn.addEventListener("click", () => openEditDialog(q));
+    delBtn.addEventListener("click", () => {
+      openConfirm("Excluir esta questão?", () => {
         Simulado.remove(q.id);
         renderListView();
-        showMessage('Questão excluída.', 'success');
+        showMessage("Questão excluída.", "success");
       });
     });
 
-    actions.appendChild(editBtn);
-    actions.appendChild(delBtn);
-    card.appendChild(actions);
+    btns.appendChild(editBtn);
+    btns.appendChild(delBtn);
+    card.appendChild(btns);
 
     list.appendChild(card);
   });
 
-  list.classList.remove('hidden');
-  document.getElementById('quiz').classList.add('hidden');
+  list.classList.remove("hidden");
+  document.getElementById("quiz").classList.add("hidden");
 }
 
-/* ---------- Edit dialog (inclui justificativa) ---------- */
+/* ============================================================
+   MODAL DE EDIÇÃO
+   ============================================================ */
 
-function openEditDialog(question) {
+function openEditDialog(q) {
   const modal = document.getElementById('modalConfirm');
   const title = modal.querySelector('#confirmTitle');
   const message = modal.querySelector('#confirmMessage');
-  const okBtn = modal.querySelector('#confirmOk');
-  const cancelBtn = modal.querySelector('#confirmCancel');
 
   title.textContent = 'Editar questão';
   message.innerHTML = '';
 
-  const form = createEl('div', { class: 'edit-form' });
-  form.appendChild(createEl('label', { text: 'Pergunta' }));
-  const qInput = createEl('textarea', { rows: 3 });
-  qInput.value = question.question;
+  const form = createEl("div", { class: "flex flex-col gap-2 text-sm" });
+
+  // Pergunta
+  form.appendChild(createEl("label", { text: "Pergunta" }));
+  const qInput = createEl("textarea", {
+    class:
+      "border border-gray-300 dark:border-gray-700 rounded p-2 bg-white dark:bg-gray-800",
+    rows: 3
+  });
+  qInput.value = q.question;
   form.appendChild(qInput);
 
-  question.options.forEach((opt, i) => {
-    form.appendChild(createEl('label', { text: String.fromCharCode(97 + i) + ')' }));
-    const t = createEl('input', { type: 'text' });
-    t.value = opt;
+  q.options.forEach((opt, i) => {
+    form.appendChild(createEl("label", { text: `${String.fromCharCode(97 + i)})` }));
+    const t = createEl("input", {
+      class:
+        "border border-gray-300 dark:border-gray-700 rounded p-2 bg-white dark:bg-gray-800",
+      type: "text",
+      value: opt
+    });
     form.appendChild(t);
   });
 
-  form.appendChild(createEl('label', { text: 'Índice da resposta correta (0-4)' }));
-  const ansInput = createEl('input', { type: 'number', min: 0, max: 4, value: question.answer });
+  // Resposta correta
+  form.appendChild(createEl("label", {
+    text: "Índice da resposta correta (0-4)"
+  }));
+  const ansInput = createEl("input", {
+    type: "number",
+    min: 0,
+    max: 4,
+    value: q.answer,
+    class:
+      "border border-gray-300 dark:border-gray-700 rounded p-2 bg-white dark:bg-gray-800"
+  });
   form.appendChild(ansInput);
 
-  form.appendChild(createEl('label', { text: 'Justificativa (opcional)' }));
-  const justInput = createEl('textarea', { rows: 3 });
-  justInput.value = question.explanation || '';
+  // Justificativa
+  form.appendChild(createEl("label", {
+    text: "Justificativa (opcional)"
+  }));
+  const justInput = createEl("textarea", {
+    class:
+      "border border-gray-300 dark:border-gray-700 rounded p-2 bg-white dark:bg-gray-800",
+    rows: 3
+  });
+  justInput.value = q.explanation || "";
   form.appendChild(justInput);
 
   message.appendChild(form);
-  okBtn.textContent = 'Salvar';
-  cancelBtn.textContent = 'Cancelar';
-  modal.classList.remove('hidden');
 
-  const onOk = () => {
-    const newQ = qInput.value.trim();
-    const newOptions = Array.from(form.querySelectorAll('input[type="text"]')).map(i => i.value.trim());
-    const newAnswer = parseInt(ansInput.value, 10);
-    const newExplanation = justInput.value.trim();
-
-    if (!newQ || newOptions.some(o => !o)) {
-      showMessage('Pergunta e alternativas não podem ficar vazias.', 'error');
-      return;
-    }
-    Simulado.update(question.id, { question: newQ, options: newOptions, answer: newAnswer, explanation: newExplanation });
-    modal.classList.add('hidden');
-    showMessage('Questão atualizada.', 'success');
-    renderListView();
-    okBtn.removeEventListener('click', onOk);
-  };
-
-  okBtn.addEventListener('click', onOk, { once: true });
-  cancelBtn.addEventListener('click', () => {
-    modal.classList.add('hidden');
-  }, { once: true });
-}
-
-/* ---------- Confirm modal utility ---------- */
-
-function openConfirm(message, onOk) {
-  const modal = document.getElementById('modalConfirm');
-  modal.querySelector('#confirmTitle').textContent = 'Confirmação';
-  modal.querySelector('#confirmMessage').textContent = message;
   const okBtn = modal.querySelector('#confirmOk');
   const cancelBtn = modal.querySelector('#confirmCancel');
 
-  modal.classList.remove('hidden');
+  okBtn.textContent = "Salvar";
+  cancelBtn.textContent = "Cancelar";
 
-  const cleanup = () => {
-    okBtn.removeEventListener('click', okHandler);
-    cancelBtn.removeEventListener('click', cancelHandler);
-    modal.classList.add('hidden');
+  modal.classList.remove("hidden");
+
+  const onOk = () => {
+    const newQ = qInput.value.trim();
+    const newOpts = Array.from(form.querySelectorAll('input[type="text"]'))
+      .map(e => e.value.trim());
+    const newAns = parseInt(ansInput.value, 10);
+    const newExp = justInput.value.trim();
+
+    if (!newQ || newOpts.some(o => !o)) {
+      showMessage("Pergunta e alternativas não podem ficar vazias.", "error");
+      return;
+    }
+
+    Simulado.update(q.id, {
+      question: newQ,
+      options: newOpts,
+      answer: newAns,
+      explanation: newExp
+    });
+
+    modal.classList.add("hidden");
+    showMessage("Questão atualizada.", "success");
+    renderListView();
   };
 
-  const okHandler = () => {
+  okBtn.addEventListener("click", onOk, { once: true });
+  cancelBtn.addEventListener("click", () => modal.classList.add("hidden"), { once: true });
+}
+
+/* ============================================================
+   MODAL CONFIRMAÇÃO
+   ============================================================ */
+
+function openConfirm(message, onOk) {
+  const modal = document.getElementById('modalConfirm');
+  modal.querySelector('#confirmTitle').textContent = "Confirmação";
+  modal.querySelector('#confirmMessage').textContent = message;
+
+  const okBtn = modal.querySelector('#confirmOk');
+  const cancelBtn = modal.querySelector('#confirmCancel');
+
+  modal.classList.remove("hidden");
+
+  const cleanup = () => {
+    okBtn.removeEventListener("click", okH);
+    cancelBtn.removeEventListener("click", cancelH);
+    modal.classList.add("hidden");
+  };
+
+  const okH = () => {
     cleanup();
     onOk && onOk();
   };
-  const cancelHandler = () => {
-    cleanup();
-  };
 
-  okBtn.addEventListener('click', okHandler);
-  cancelBtn.addEventListener('click', cancelHandler);
+  const cancelH = () => cleanup();
+
+  okBtn.addEventListener("click", okH);
+  cancelBtn.addEventListener("click", cancelH);
 }
 
-/* ---------- Eventos de Import / Export / Clear ---------- */
+/* ============================================================
+   Importação / Exportação
+   ============================================================ */
 
 document.getElementById('importBtn').addEventListener('click', () => {
   const txt = document.getElementById('input').value;
   try {
     const qs = parseBlock(txt);
-    let added = 0, duplicates = 0;
+    let added = 0, dup = 0;
+
     qs.forEach(q => {
       const res = Simulado.add(q);
       if (res.added) added++;
-      else duplicates++;
+      else dup++;
     });
-    const total = Simulado.list().length;
-    showMessage(`Importado ${added} questões. Duplicadas: ${duplicates}. Total salvo: ${total}.`, 'success');
-    document.getElementById('input').value = '';
+
+    showMessage(`Importadas ${added}. Duplicadas: ${dup}.`, "success");
+    document.getElementById('input').value = "";
+
   } catch (e) {
     showMessage('Erro: ' + e.message, 'error');
   }
 });
 
 document.getElementById('exportBtn').addEventListener('click', () => {
-  const arr = Simulado.export();
-  const blob = new Blob([JSON.stringify(arr, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'simulado_questions.json';
-  a.click();
-  URL.revokeObjectURL(url);
-  showMessage('Exportado JSON.', 'success');
+  showMessage("Exportar JSON está desativado.", "error");
 });
 
 document.getElementById('clearBtn').addEventListener('click', () => {
-  openConfirm('Apagar todas as questões salvas? Esta ação não pode ser desfeita.', () => {
+  openConfirm("Apagar todas as questões?", () => {
     Simulado.clear();
     document.getElementById('list').innerHTML = '';
-    showMessage('Todas as questões foram apagadas.', 'success');
+    showMessage("Todas as questões foram apagadas.", "success");
   });
 });
 
-/* ---------- List & Start ---------- */
+/* ============================================================
+   Botões principais
+   ============================================================ */
 
 document.getElementById('listBtn').addEventListener('click', () => {
   renderListView();
+  // Quando mostrar a lista, vamos esconder o menu também para foco no conteúdo
+  document.getElementById("mainMenu")?.classList.add("hidden");
+  document.getElementById("backToMenuContainer")?.classList.remove("hidden");
 });
 
 document.getElementById('startBtn').addEventListener('click', () => {
-  openConfirm('Iniciar simulado agora?', () => {
+  openConfirm("Iniciar simulado agora?", () => {
     const arr = Simulado.list();
-    if (arr.length === 0) {
-      showMessage('Não há perguntas salvas.', 'error');
-      return;
-    }
+    if (arr.length === 0)
+      return showMessage("Não há perguntas salvas.", "error");
     startQuiz(arr);
   });
 });
 
-/* ---------- Quiz flow with progress, improved UI, review (shows justificativa) ---------- */
+/* ============================================================
+   QUIZ — com layout Tailwind + esconder menu
+   ============================================================ */
 
 function startQuiz(qs) {
+
+  // 🔥 Esconder menu imediatamente ao iniciar
+  document.getElementById("mainMenu")?.classList.add("hidden");
+  document.getElementById("backToMenuContainer")?.classList.remove("hidden");
+
   const questions = shuffle(qs.slice());
   let index = 0;
   let correct = 0;
-  const userAnswers = [];
+  const answers = [];
 
   const quizEl = document.getElementById('quiz');
   quizEl.innerHTML = '';
   quizEl.classList.remove('hidden');
   document.getElementById('list').classList.add('hidden');
 
-  const progressWrap = createEl('div', { class: 'progress-wrap' });
-  const progressBar = createEl('div', { class: 'progress-bar' });
-  progressWrap.appendChild(progressBar);
-  const progressText = createEl('div', { class: 'progress-text', text: `0 / ${questions.length}` });
+  /* Barra de progresso */
+  const pWrap = createEl('div', { class: 'progress-wrap' });
+  const pBar = createEl('div', { class: 'progress-bar' });
+  pWrap.appendChild(pBar);
 
-  quizEl.appendChild(progressWrap);
-  quizEl.appendChild(progressText);
+  const pText = createEl('div', {
+    class: 'text-sm text-gray-500 dark:text-gray-400 mb-2',
+    text: `0 / ${questions.length}`
+  });
+
+  quizEl.appendChild(pWrap);
+  quizEl.appendChild(pText);
 
   function updateProgress() {
-    const val = Math.round(((index) / questions.length) * 100);
-    progressBar.style.width = val + '%';
-    progressText.textContent = `${index} / ${questions.length}`;
+    const pct = Math.round((index / questions.length) * 100);
+    pBar.style.width = pct + '%';
+    pText.textContent = `${index} / ${questions.length}`;
   }
 
   function renderQuestion() {
     const q = questions[index];
-    // remove previous dynamic question card
-    quizEl.querySelectorAll('.question-card.dynamic').forEach(n => n.remove());
-    const card = createEl('div', { class: 'question-card dynamic' });
 
-    card.appendChild(createEl('div', { class: 'card-header' }, [
-      createEl('strong', { text: 'Pergunta ' + (index + 1) + ' de ' + questions.length + ' ' })
-    ]));
+    quizEl.querySelectorAll('.dynamic').forEach(el => el.remove());
 
-    card.appendChild(createEl('div', { class: 'qtext', text: q.question }));
+    const card = createEl('div', {
+      class:
+        "dynamic bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 " +
+        "rounded-lg p-4 shadow-lg mt-4"
+    });
 
-    const optionsWrap = createEl('div', { class: 'options-grid' });
+    card.appendChild(createEl('div', {
+      class: "font-semibold mb-2",
+      text: `Pergunta ${index + 1} de ${questions.length}`
+    }));
+
+    card.appendChild(createEl('p', {
+      class: "mb-4",
+      text: q.question
+    }));
+
+    /* Alternativas */
+    const opts = createEl('div', { class: 'grid gap-2' });
 
     q.options.forEach((opt, i) => {
-      const btn = createEl('button', { class: 'option', type: 'button' });
-      const letter = createEl('span', { class: 'opt-letter', text: String.fromCharCode(97 + i) + ')' });
-      const txt = createEl('span', { class: 'opt-text', text: opt });
+      const btn = createEl('button', {
+        class:
+          "text-left px-3 py-2 rounded border border-gray-300 dark:border-gray-600 " +
+          "bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 " +
+          "transition",
+        type: "button"
+      });
+
+      const letter = createEl('span', {
+        class: "font-bold uppercase mr-2 text-primary",
+        text: `${String.fromCharCode(97 + i)})`
+      });
+
+      const txt = createEl('span', { text: opt });
+
       btn.appendChild(letter);
       btn.appendChild(txt);
 
-      btn.addEventListener('click', () => {
-        optionsWrap.querySelectorAll('button').forEach(b => b.disabled = true);
-        userAnswers[index] = i;
+      btn.addEventListener("click", () => {
+        opts.querySelectorAll('button').forEach(b => (b.disabled = true));
+
+        answers[index] = i;
+
         if (i === q.answer) {
           btn.classList.add('correct');
           correct++;
         } else {
           btn.classList.add('wrong');
-          const correctBtn = optionsWrap.querySelectorAll('button')[q.answer];
-          if (correctBtn) correctBtn.classList.add('correct');
+          const cb = opts.querySelectorAll('button')[q.answer];
+          if (cb) cb.classList.add('correct');
         }
 
-        // show justificativa if exists
         if (q.explanation) {
-          const just = createEl('div', { class: 'small justify', text: 'Justificativa: ' + q.explanation });
-          card.appendChild(just);
+          card.appendChild(createEl('p', {
+            class: "mt-3 text-sm text-gray-600 dark:text-gray-300",
+            text: "Justificativa: " + q.explanation
+          }));
         }
 
-        const next = createEl('div', { class: 'next-wrap' });
-        const nxtBtn = createEl('button', { text: (index < questions.length - 1) ? 'Próxima' : 'Finalizar' });
-        nxtBtn.addEventListener('click', () => {
+        const next = createEl('div', { class: 'mt-4' });
+
+        const nBtn = createEl('button', {
+          class:
+            "px-4 py-2 rounded bg-primary text-white hover:bg-blue-700 transition",
+          text: index < questions.length - 1 ? "Próxima" : "Finalizar"
+        });
+
+        nBtn.addEventListener("click", () => {
           index++;
           if (index < questions.length) {
             updateProgress();
@@ -472,122 +551,174 @@ function startQuiz(qs) {
             finish();
           }
         });
-        next.appendChild(nxtBtn);
+
+        next.appendChild(nBtn);
         card.appendChild(next);
       });
 
-      optionsWrap.appendChild(btn);
+      opts.appendChild(btn);
     });
 
-    card.appendChild(optionsWrap);
+    card.appendChild(opts);
     quizEl.appendChild(card);
+
     updateProgress();
   }
 
   function finish() {
     quizEl.innerHTML = '';
-    const res = createEl('div', { class: 'question-card' });
-    const pct = Math.round((correct / questions.length) * 100);
-    res.appendChild(createEl('h3', { text: 'Resultado' }));
-    res.appendChild(createEl('p', { text: `Acertos: ${correct} / ${questions.length} (${pct}%)` }));
 
-    const btns = createEl('div', { class: 'card-actions' });
-    const reviewBtn = createEl('button', { text: 'Revisar perguntas' });
-    const closeBtn = createEl('button', { text: 'Fechar' });
-
-    reviewBtn.addEventListener('click', () => {
-      renderReview();
+    const res = createEl('div', {
+      class:
+        "bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 " +
+        "rounded-lg p-4 shadow"
     });
 
+    const pct = Math.round((correct / questions.length) * 100);
+
+    res.appendChild(createEl('h3', {
+      class: "text-xl font-bold mb-2",
+      text: "Resultado"
+    }));
+
+    res.appendChild(createEl('p', {
+      class: "mb-4",
+      text: `Acertos: ${correct} / ${questions.length} (${pct}%)`
+    }));
+
+    const btns = createEl('div', { class: "flex gap-2" });
+
+    const reviewBtn = createEl('button', {
+      class:
+        "px-4 py-2 rounded bg-yellow-500 text-white hover:bg-yellow-600 transition",
+      text: "Revisar perguntas"
+    });
+
+    const closeBtn = createEl('button', {
+      class:
+        "px-4 py-2 rounded bg-gray-300 dark:bg-gray-700 hover:opacity-80 transition",
+      text: "Fechar"
+    });
+
+    reviewBtn.addEventListener('click', () => renderReview());
     closeBtn.addEventListener('click', () => {
-      quizEl.classList.add('hidden');
-      showMessage('Simulado finalizado. Resultado: ' + pct + '%', 'success');
+      quizEl.classList.add("hidden");
+      showMessage(`Simulado finalizado. Resultado: ${pct}%`, "success");
+
+      // ✔ Voltar menu quando fechar simulado
+      document.getElementById("mainMenu")?.classList.remove("hidden");
+      document.getElementById("backToMenuContainer")?.classList.add("hidden");
     });
 
     btns.appendChild(reviewBtn);
     btns.appendChild(closeBtn);
     res.appendChild(btns);
+
     quizEl.appendChild(res);
   }
 
   function renderReview() {
     quizEl.innerHTML = '';
-    const wrap = createEl('div');
-    questions.forEach((q, i) => {
-      const card = createEl('div', { class: 'question-card' });
-      card.appendChild(createEl('strong', { text: 'Pergunta ' + (i + 1) + ': ' }));
-      card.appendChild(createEl('div', { text: q.question }));
 
-      q.options.forEach((opt, idx) => {
-        const row = createEl('div', { class: 'small opt-row' });
-        const letter = createEl('span', { class: 'opt-letter', text: String.fromCharCode(97 + idx) + ') ' });
-        const txt = createEl('span', { text: opt });
-        if (idx === q.answer) letter.classList.add('correct-letter');
-        if (userAnswers[i] === idx) row.classList.add('user-selected');
+    questions.forEach((q, idx) => {
+      const card = createEl('div', {
+        class:
+          "bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 " +
+          "rounded-lg p-4 shadow mb-4"
+      });
+
+      card.appendChild(createEl('p', {
+        class: "font-semibold mb-1",
+        text: `Pergunta ${idx + 1}: ${q.question}`
+      }));
+
+      q.options.forEach((opt, i) => {
+        const row = createEl('div', {
+          class: "flex items-start gap-2 text-sm my-1"
+        });
+
+        const letter = createEl('span', {
+          class: "font-bold w-5",
+          text: `${String.fromCharCode(97 + i)})`
+        });
+
+        if (i === q.answer) letter.classList.add("text-green-600");
+        if (answers[idx] === i) row.classList.add("user-selected");
+
         row.appendChild(letter);
-        row.appendChild(txt);
+        row.appendChild(createEl('span', { text: opt }));
+
         card.appendChild(row);
       });
 
-      const explain = createEl('div', { class: 'explain small', text: q.explanation ? ('Justificativa: ' + q.explanation) : 'Justificativa: (vazia)' });
-      card.appendChild(explain);
-      wrap.appendChild(card);
+      card.appendChild(createEl('p', {
+        class: "text-xs text-gray-500 dark:text-gray-400 mt-2",
+        text: "Justificativa: " + (q.explanation || "(vazia)")
+      }));
+
+      quizEl.appendChild(card);
     });
 
-    const back = createEl('div', { class: 'card-actions' });
-    const exit = createEl('button', { text: 'Fechar revisão' });
-    exit.addEventListener('click', () => {
-      quizEl.classList.add('hidden');
-      showMessage('Revisão finalizada.', 'info');
+    const back = createEl('div', { class: "mt-4" });
+    const exit = createEl('button', {
+      class:
+        "px-4 py-2 rounded bg-primary text-white hover:bg-blue-700 transition",
+      text: "Fechar revisão"
     });
+
+    exit.addEventListener("click", () => {
+      quizEl.classList.add("hidden");
+      showMessage("Revisão finalizada.", "info");
+
+      // Voltar ao menu
+      document.getElementById("mainMenu")?.classList.remove("hidden");
+      document.getElementById("backToMenuContainer")?.classList.add("hidden");
+    });
+
     back.appendChild(exit);
-    wrap.appendChild(back);
-    quizEl.appendChild(wrap);
+    quizEl.appendChild(back);
   }
 
   renderQuestion();
 }
 
-/* ---------- Shuffle utility ---------- */
+/* ============================================================
+   Shuffle
+   ============================================================ */
 
-function shuffle(a) {
-  for (let i = a.length - 1; i > 0; i--) {
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
+    [arr[i], arr[j]] = [arr[j], arr[i]];
   }
-  return a;
+  return arr;
 }
 
-/* ---------- Modals and theme ---------- */
+/* ============================================================
+   Modais e Tema
+   ============================================================ */
 
 const modal = document.getElementById('modal');
-const showBtn = document.getElementById('showInstructionsBtn');
-const closeBtn = document.getElementById('closeModalBtn');
-const modalOk = document.getElementById('modalOkBtn');
-
-showBtn.addEventListener('click', () => modal.classList.remove('hidden'));
-closeBtn.addEventListener('click', () => modal.classList.add('hidden'));
-modalOk.addEventListener('click', () => modal.classList.add('hidden'));
-modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.add('hidden'); });
+document.getElementById('showInstructionsBtn').onclick = () => modal.classList.remove("hidden");
+document.getElementById('closeModalBtn').onclick = () => modal.classList.add("hidden");
+document.getElementById('modalOkBtn').onclick = () => modal.classList.add("hidden");
+modal.onclick = e => { if (e.target === modal) modal.classList.add("hidden") };
 
 const modalScript = document.getElementById('modalScript');
-const showScriptBtn = document.getElementById('showScriptBtn');
-const closeScriptModalBtn = document.getElementById('closeScriptModalBtn');
-const modalScriptOkBtn = document.getElementById('modalScriptOkBtn');
-
-showScriptBtn.addEventListener('click', () => modalScript.classList.remove('hidden'));
-closeScriptModalBtn.addEventListener('click', () => modalScript.classList.add('hidden'));
-modalScriptOkBtn.addEventListener('click', () => modalScript.classList.add('hidden'));
-modalScript.addEventListener('click', (e) => { if (e.target === modalScript) modalScript.classList.add('hidden'); });
+document.getElementById('showScriptBtn').onclick = () => modalScript.classList.remove("hidden");
+document.getElementById('closeScriptModalBtn').onclick = () => modalScript.classList.add("hidden");
+document.getElementById('modalScriptOkBtn').onclick = () => modalScript.classList.add("hidden");
+modalScript.onclick = e => { if (e.target === modalScript) modalScript.classList.add("hidden") };
 
 const modalConfirm = document.getElementById('modalConfirm');
-modalConfirm.querySelector('#closeConfirmModalBtn').addEventListener('click', () => modalConfirm.classList.add('hidden'));
-modalConfirm.addEventListener('click', (e) => { if (e.target === modalConfirm) modalConfirm.classList.add('hidden'); });
+document.getElementById('closeConfirmModalBtn').onclick = () => modalConfirm.classList.add("hidden");
+modalConfirm.onclick = e => { if (e.target === modalConfirm) modalConfirm.classList.add("hidden") };
 
-/* Theme toggle */
+/* Tema */
 const themeToggle = document.getElementById('themeToggle');
 const root = document.documentElement;
-themeToggle.addEventListener('click', () => {
+
+themeToggle.addEventListener("click", () => {
   if (root.classList.contains('dark')) {
     root.classList.remove('dark');
     localStorage.setItem('simulado_theme', 'light');
@@ -596,12 +727,36 @@ themeToggle.addEventListener('click', () => {
     localStorage.setItem('simulado_theme', 'dark');
   }
 });
-(function () {
+
+(() => {
   const t = localStorage.getItem('simulado_theme') || 'light';
   if (t === 'dark') root.classList.add('dark');
 })();
 
-/* On load clear messages */
+/* Limpa mensagens ao carregar */
 document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('messages').textContent = '';
+  document.getElementById('messages').textContent = "";
 });
+
+/* ============================================================
+   Back to Menu button handler (fix)
+   ============================================================ */
+
+// Segurança: liga o handler se o botão existir
+const backBtn = document.getElementById('backToMenuBtn');
+if (backBtn) {
+  backBtn.addEventListener('click', () => {
+    // esconder áreas dinâmicas
+    document.getElementById('quiz')?.classList.add('hidden');
+    document.getElementById('list')?.classList.add('hidden');
+
+    // esconder botão voltar
+    document.getElementById('backToMenuContainer')?.classList.add('hidden');
+
+    // mostrar menu principal
+    document.getElementById('mainMenu')?.classList.remove('hidden');
+
+    // limpar mensagens temporárias
+    document.getElementById('messages').textContent = '';
+  });
+}
