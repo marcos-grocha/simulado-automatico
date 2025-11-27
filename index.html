@@ -7,40 +7,53 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h2>Simulado Automático</h2>
+  <header class="topbar">
+    <h1>Marcão Simulados</h1>
+    <div class="top-controls">
+      <button id="themeToggle" class="icon-btn" aria-label="Alternar tema">🌓</button>
+    </div>
+  </header>
 
-  <p class="small">
-    Cole suas questões no formato exigido.  
-    <button id="showInstructionsBtn" class="link-btn">Ver Instruções</button>
-    <button id="showScriptBtn" class="link-btn">Sugestão de Script</button>
-  </p>
+  <main class="container">
+    <h2>Simulado Automático</h2>
 
-  <textarea id="input" placeholder="Cole aqui o bloco com 'Pergunta: ...' e 'Gabarito:xxxxx'"></textarea>
+    <p class="small">
+      Cole suas questões no formato exigido nas instruções.
+      <button id="showInstructionsBtn" class="link-btn">Ver Instruções</button> |
+      <button id="showScriptBtn" class="link-btn">Sugestão de Script</button>
+    </p>
 
-  <div>
-    <button id="importBtn">Importar e salvar</button>
-    <button id="startBtn">Iniciar simulado</button>
-    <button id="listBtn">Ver questões salvas</button>
-    <button id="clearBtn">Apagar tudo</button>
-    <button id="exportBtn">Exportar JSON</button>
-  </div>
+    <textarea id="input" placeholder="Cole aqui o bloco conforme o modelo esperado."></textarea>
 
-  <div id="messages" class="small"></div>
-  <div id="list" class="hidden"></div>
-  <div id="quiz" class="hidden"></div>
+    <div class="button-row">
+      <button id="importBtn">Importar e salvar</button>
+      <button id="startBtn">Iniciar simulado</button>
+      <button id="listBtn">Ver questões salvas</button>
+      <button id="clearBtn">Apagar tudo</button>
+      <button id="exportBtn">Exportar JSON</button>
+    </div>
 
-    <!-- Modal -->
-    <div id="modal" class="modal hidden">
-        <div class="modal-content animated">
-            <h3>Instruções</h3>
-            Exemplo de como esperamos que as respostas sejam coladas:
-            <pre class="instructions">
+    <div id="messages" class="small" role="status" aria-live="polite"></div>
+
+    <div id="list" class="hidden"></div>
+    <div id="quiz" class="hidden"></div>
+
+
+    <!-- Modal Instruções -->
+    <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-content">
+        <button class="modal-close" id="closeModalBtn" aria-label="Fechar modal">✕</button>
+        <h3>Instruções</h3>
+        <p>Use SEMPRE o formato abaixo (a justificativa pode faltar):</p>
+
+        <pre class="instructions">
 Pergunta: Qual o resultado de 7 + 5?
 a) 10
 b) 11
 c) 12
 d) 13
 e) 14
+Justificativa: 7 + 5 = 12.
 
 Pergunta: Quanto é 9 × 6?
 a) 45
@@ -48,27 +61,24 @@ b) 52
 c) 54
 d) 56
 e) 60
+Justificativa: Opcional — pode deixar sem.
 
-Pergunta: Qual a fração equivalente a 0,25?
-a) 1/2
-b) 1/3
-c) 1/4
-d) 1/5
-e) 3/4
+Gabarito:cc
+        </pre>
 
-Gabarito:ccc
-            </pre>
-            <button id="closeModalBtn">Fechar</button>
-        </div>
+        <button id="modalOkBtn">Entendi</button>
+      </div>
     </div>
 
-    <!-- Modal Sugestão de Script -->
-    <div id="modalScript" class="modal hidden">
-        <div class="modal-content">
-            <h3>Sugestão de Script</h3>
-            Exemplo de script que você pode usar para gerar isso através do ChatGPT, <br>
-            (altere o nome ASSUNTO e os dois X):
-            <pre class="instructions">
+
+    <!-- Modal Sugestão Script -->
+    <div id="modalScript" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-content">
+        <button class="modal-close" id="closeScriptModalBtn" aria-label="Fechar modal">✕</button>
+        <h3>Sugestão de Script</h3>
+        <p>Modelo atualizado com justificativa opcional:</p>
+
+        <pre class="instructions">
 Quero que você gere X perguntas sobre ASSUNTO seguindo EXATAMENTE o padrão abaixo:
 
 Pergunta: TEXTO DA PERGUNTA
@@ -77,29 +87,44 @@ b) alternativa 2
 c) alternativa 3
 d) alternativa 4
 e) alternativa 5
+Justificativa: Explique por que a alternativa correta está certa. (Ou deixe em branco)
 
 Após todas as perguntas, escreva apenas:
 
 Gabarito:xxxxx
 
-Onde cada letra corresponde à alternativa correta.
-Exemplo: cebad
-
 IMPORTANTE:
 - Não pule linhas entre perguntas.
-- Use sempre esse formato.
+- Não use Markdown.
 - Sempre 5 alternativas.
 - Sempre 1 correta.
+- A justificativa é opcional.
+        </pre>
 
-Agora gere as X perguntas sobre ASSUNTO.
-            </pre>
-            <button id="closeScriptModalBtn">Fechar</button>
-        </div>
+        <button id="modalScriptOkBtn">Fechar</button>
+      </div>
     </div>
 
+
+    <!-- Modal Confirm -->
+    <div id="modalConfirm" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-content">
+        <button class="modal-close" id="closeConfirmModalBtn" aria-label="Fechar modal">✕</button>
+        <h3 id="confirmTitle">Confirmação</h3>
+        <p id="confirmMessage"></p>
+        <div class="confirm-actions">
+          <button id="confirmCancel">Cancelar</button>
+          <button id="confirmOk">OK</button>
+        </div>
+      </div>
+    </div>
+
+
     <footer>
-        <p>&copy;<a href="https://www.linkedin.com/in/marcos-grocha/" target="_blank"> marcos-grocha</a></p>
+      <p>&copy;<a href="https://www.linkedin.com/in/marcos-grocha/" target="_blank"> marcos-grocha</a></p>
     </footer>
+  </main>
+
   <script src="script.js"></script>
 </body>
 </html>
