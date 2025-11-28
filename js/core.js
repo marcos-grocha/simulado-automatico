@@ -2,6 +2,10 @@
 // Helpers, Storage (Simulado), modais, tema, e lista/edição de questões.
 // Exporta: showMessage, createEl, Simulado, openConfirm, renderListView, openEditDialog, initTheme
 
+function toBase64(str) {
+  return btoa(unescape(encodeURIComponent(str)));
+}
+
 export function showMessage(txt, type = '') {
   const el = document.getElementById('messages');
   if (!el) return;
@@ -56,7 +60,7 @@ export const Simulado = {
 
   add(qObj) {
     const arr = this._load();
-    const id = btoa(
+    const id = toBase64(
       (qObj.question || '') +
       '|' + (qObj.options || []).join('|') +
       '|' + (qObj.explanation || '')
@@ -79,7 +83,7 @@ export const Simulado = {
     const i = arr.findIndex(q => q.id === id);
     if (i === -1) return false;
 
-    const newId = btoa(
+    const newId = toBase64(
       (newObj.question || '') +
       '|' + (newObj.options || []).join('|') +
       '|' + (newObj.explanation || '')
